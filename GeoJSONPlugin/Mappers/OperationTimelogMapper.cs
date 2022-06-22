@@ -13,154 +13,197 @@ using System;
 namespace GeoJSONPlugin.Mappers
 {
     public class OperationTimelogMapper
-	{
-		private readonly ApplicationDataModel _dataModel;
-		private readonly PluginProperties _properties;
-		//ILaR: temporary fix, should come from ddiExport.txt
-		private Dictionary<int, string> _missingDDI = new Dictionary<int, string>   { {67, "Actual Working Width" }
-																					, {72, "Actual Volume Content" }
-																					, {75, "Actual Mass Content" }
-																					, {87, "Wet Mass Per Time Yield" }
-																					, {390, "Actual Revolutions Per Time" }
-		};
+    {
+        private readonly ApplicationDataModel _dataModel;
+        private readonly PluginProperties _properties;
+        //ILaR: temporary fix, should come from ddiExport.txt
+        private Dictionary<int, string> _missingDDI = new Dictionary<int, string>   { {67, "Actual Working Width" }
+                                                                                    , {72, "Actual Volume Content" }
+                                                                                    , {75, "Actual Mass Content" }
+                                                                                    , {87, "Wet Mass Per Time Yield" }
+                                                                                    , {390, "Actual Revolutions Per Time" }
+        };
 
-		public OperationTimelogMapper(PluginProperties properties, ApplicationDataModel dataModel = null)
-		{
-			_dataModel = dataModel;
-			_properties = properties;
-		}
+        public OperationTimelogMapper(PluginProperties properties, ApplicationDataModel dataModel = null)
+        {
+            _dataModel = dataModel;
+            _properties = properties;
+        }
 
-		private List<DeviceElementUse> GetAllSections(OperationData operationData)
-		{
-			var deviceElementUses = new List<DeviceElementUse>();
+        private List<DeviceElementUse> GetAllSections(OperationData operationData)
+        {
+            var deviceElementUses = new List<DeviceElementUse>();
 
-			if (operationData.GetDeviceElementUses != null)
-			{
-				int maximumDepth = 0;	// @ToDo ILaR: operationData.MaxDepth;
-				
-				if (_properties.MaximumMappingDepth != null)
-				{
-					if (_properties.MaximumMappingDepth >= -1 || _properties.MaximumMappingDepth <= operationData.MaxDepth)
-						maximumDepth = (int)_properties.MaximumMappingDepth;
-				}
+            if (operationData.GetDeviceElementUses != null)
+            {
+                int maximumDepth = operationData.MaxDepth;
 
-				for (var i = 0; i <= maximumDepth; i++)
-				{
-					var dvcElemUses = operationData.GetDeviceElementUses(i);
-					if (dvcElemUses != null)
-						deviceElementUses.AddRange(dvcElemUses);
-				}
-			}
+                if (_properties.MaximumMappingDepth != null)
+                {
+                    if (_properties.MaximumMappingDepth >= -1 || _properties.MaximumMappingDepth <= operationData.MaxDepth)
+                        maximumDepth = (int)_properties.MaximumMappingDepth;
+                }
 
-			return deviceElementUses;
-		}
+                for (var i = 0; i <= maximumDepth; i++)
+                {
+                    var dvcElemUses = operationData.GetDeviceElementUses(i);
+                    if (dvcElemUses != null)
+                        deviceElementUses.AddRange(dvcElemUses);
+                }
+            }
 
-	public List<Feature> MapMultiple(OperationData operation, IEnumerable<SpatialRecord> spatialRecords)
-		{
-			List<DeviceElementUse> deviceElementUses = GetAllSections(operation);
-			List<WorkingData> workingDatas = deviceElementUses.SelectMany(x => x.GetWorkingDatas()).ToList();   // meters
+            return deviceElementUses;
+        }
 
-			// Display representaitons for debug
-			Console.WriteLine($"Contains the following representations: ");
-			foreach (var workingData in workingDatas)
-			{
-				Console.WriteLine($"{workingData.Representation.CodeSource}: {workingData.Representation.Code}");
-			}
-			Console.WriteLine($"");
+        public List<Feature> MapMultiple(OperationData operation, IEnumerable<SpatialRecord> spatialRecords)
+        {
+            List<DeviceElementUse> deviceElementUses = GetAllSections(operation);
+            List<WorkingData> workingDatas = deviceElementUses.SelectMany(x => x.GetWorkingDatas()).ToList();   // meters
 
-			// inspired by ISOv4Plugin/Mappers/TimeLogMapper
-			List<Feature> features = new List<Feature>();
+            // Display representaitons for debug
+            Console.WriteLine($"Contains the following representations: ");
+            foreach (var workingData in workingDatas)
+            {
+                Console.WriteLine($"{workingData.Representation.CodeSource}: {workingData.Representation.Code}");
+            }
+            Console.WriteLine($"");
 
-			foreach (SpatialRecord spatialRecord in spatialRecords)
-			{
-				if (spatialRecord.Geometry != null && spatialRecord.Geometry as Point != null)
-				{
-					Dictionary<string, object> properties = new Dictionary<string, object>();
-						
-					Point location = spatialRecord.Geometry as Point;
-					if (location.X == 0 || location.Y == 0)
-						continue;
+            // inspired by ISOv4Plugin/Mappers/TimeLogMapper
+            List<Feature> features = new List<Feature>();
 
-					// altitude
-					if (location.Z != null)
-					{
-						properties.Add("Elevation", location.Z);
-					}
+            foreach (SpatialRecord spatialRecord in spatialRecords)
+            {
+                if (spatialRecord.Geometry != null && spatialRecord.Geometry as Point != null)
+                {
+                    Dictionary<string, object> properties = new Dictionary<string, object>();
 
-					// timeStamp
-					properties.Add("Timestamp", spatialRecord.Timestamp.ToString());
-						
-					// meter values
-					var workingDatasWithValues = workingDatas.Where(x => spatialRecord.GetMeterValue(x) != null);
-					foreach (WorkingData workingData in workingDatasWithValues)		//.Where(d => _dlvOrdersByWorkingDataID.ContainsKey(d.Id.ReferenceId)))
-					{
-						string key = workingData.Representation.Code;
-						object value = null;
-						string uom = null;
+                    Point location = spatialRecord.Geometry as Point;
+                    if (location.X == 0 || location.Y == 0)
+                        continue;
 
-						if (workingData is EnumeratedWorkingData)
-						{
-							EnumeratedWorkingData enumeratedMeter = workingData as EnumeratedWorkingData;
-							if (enumeratedMeter != null && spatialRecord.GetMeterValue(enumeratedMeter) != null)
-							{
-								EnumeratedValue enumValue = (spatialRecord.GetMeterValue(enumeratedMeter) as EnumeratedValue);
-								value = enumValue.Value.Value.ToString();
-							}
-						}
-						else if (workingData is NumericWorkingData)
-						{
-							NumericWorkingData numericMeter = workingData as NumericWorkingData;
-							if (numericMeter != null && spatialRecord.GetMeterValue(numericMeter) != null)
-							{
-								NumericRepresentationValue numValue = spatialRecord.GetMeterValue(numericMeter) as NumericRepresentationValue;
-								value = numValue.Value.Value;
-								uom = numValue.Value.UnitOfMeasure.Code;
+                    // altitude
+                    if (location.Z != null)
+                    {
+                        properties.Add("Elevation_m", location.Z);
+                        properties.Add("Elevation_ft", location.Z * 3.281);
+                    }
 
-								// better key for DDI (hex2int)
-								if (workingData.Representation.CodeSource == RepresentationCodeSourceEnum.ISO11783_DDI)
-								{
-									if (numValue.Designator != null && numValue.Designator != "")
-										key = numValue.Designator;
-									else if (workingData.Representation.Description != null && workingData.Representation.Description != "")
-										key = workingData.Representation.Description;
+                    // timeStamp
+                    properties.Add("Timestamp", spatialRecord.Timestamp.ToString());
+
+                    // meter values
+                    var workingDatasWithValues = workingDatas.Where(x => spatialRecord.GetMeterValue(x) != null);
+                    foreach (WorkingData workingData in workingDatasWithValues)     //.Where(d => _dlvOrdersByWorkingDataID.ContainsKey(d.Id.ReferenceId)))
+                    {
+                        string key = workingData.Representation.Code;
+                        object value = null;
+                        string uom = null;
+
+                        if (workingData is EnumeratedWorkingData)
+                        {
+                            EnumeratedWorkingData enumeratedMeter = workingData as EnumeratedWorkingData;
+                            if (enumeratedMeter != null && spatialRecord.GetMeterValue(enumeratedMeter) != null)
+                            {
+                                EnumeratedValue enumValue = (spatialRecord.GetMeterValue(enumeratedMeter) as EnumeratedValue);
+                                value = enumValue.Value.Value.ToString();
+                            }
+                        }
+                        else if (workingData is NumericWorkingData)
+                        {
+                            NumericWorkingData numericMeter = workingData as NumericWorkingData;
+                            if (numericMeter != null && spatialRecord.GetMeterValue(numericMeter) != null)
+                            {
+                                NumericRepresentationValue numValue = spatialRecord.GetMeterValue(numericMeter) as NumericRepresentationValue;
+                                value = numValue.Value.Value;
+                                uom = numValue.Value.UnitOfMeasure.Code;
+
+                                // better key for DDI (hex2int)
+                                if (workingData.Representation.CodeSource == RepresentationCodeSourceEnum.ISO11783_DDI)
+                                {
+                                    if (numValue.Designator != null && numValue.Designator != "")
+                                        key = numValue.Designator;
+                                    else if (workingData.Representation.Description != null && workingData.Representation.Description != "")
+                                        key = workingData.Representation.Description;
                                     else
                                     {
-										// ILaR cause: key missing in representation system
-										int intKey = int.Parse(key, System.Globalization.NumberStyles.HexNumber);
-										if (_missingDDI.ContainsKey(intKey))
-											key = _missingDDI[intKey];
-										else
-											key = "DDI_" + intKey.ToString();
-									}
-								}
-							}
-						}
+                                        // ILaR cause: key missing in representation system
+                                        int intKey = int.Parse(key, System.Globalization.NumberStyles.HexNumber);
+                                        if (_missingDDI.ContainsKey(intKey))
+                                            key = _missingDDI[intKey];
+                                        else
+                                            key = "DDI_" + intKey.ToString();
+                                    }
+                                }
+                            }
+                        }
                         else // needed ?
                         {
-							value = spatialRecord.GetMeterValue(workingData);
-						}
+                            value = spatialRecord.GetMeterValue(workingData);
+                        }
 
-						if (value != null && key != null)
-						{
-							properties.Add(key, value);
+                        if (value != null && key != null)
+                        {
+                            var column = ColumnInfo.columnInfos.FirstOrDefault(c => c.Name == key);
+                            var fieldName = key;
+                            Dictionary<string, double> fieldUnitDict = null;
+                            if (column != null)
+                            {
+                                fieldUnitDict = column.FieldUnitsDict;
+                            }
 
-							if (uom != null)
-							{
-								properties.Add(key + "_Uom", uom);
-							}							
-						}
-					}
-					// add to FC
-					features.Add(new Feature(PointMapper.MapPoint2Point(spatialRecord.Geometry as Point, _properties.AffineTransformation), properties));
-				}
+                            var newProperties = new List<KeyValuePair<string, object>>();
+                            if (uom != null)
+                            {
+                                if (fieldUnitDict != null)
+                                {
+                                    foreach (var kv in fieldUnitDict)
+                                    {
+                                        var row = 1;
+                                        var newKey = kv.Key.Replace("<RowNum>", row.ToString());
+                                        while (properties.ContainsKey(newKey))
+                                        {
+                                            newKey = kv.Key.Replace("<RowNum>", row.ToString());
+                                            row++;
+                                        }
+                                        properties.Add(newKey, (double)value * kv.Value);
+                                    }
+                                }
+                                else
+                                {
+                                    var newKey = $"{fieldName}_{uom}";
+                                    var row = 2;
+                                    while (properties.ContainsKey(newKey))
+                                    {
+                                        newKey = $"{fieldName}_{uom}_Row{row}";
+                                        row++;
+                                    }
+                                    properties.Add(newKey, value);
+                                }
+                            }
+                            else
+                            {
+                                var newKey = fieldName;
+                                var row = 2;
+                                while (properties.ContainsKey(newKey))
+                                {
+                                    newKey = $"{fieldName}_Row{row}";
+                                    row++;
+                                }
+                                properties.Add(newKey, value);
+                            }
+                        }
+                    }
+                    // add to FC
+                    features.Add(new Feature(PointMapper.MapPoint2Point(spatialRecord.Geometry as Point, _properties.AffineTransformation), properties));
+                }
 
-			}
-			
-			return features;
-		}
-		internal static string GetPrefix()
-		{
-			return "OperationTimelog";
-		}
-	}
+            }
+
+            return features;
+        }
+        internal static string GetPrefix()
+        {
+            return "OperationTimelog";
+        }
+    }
 }

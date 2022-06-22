@@ -124,6 +124,7 @@ namespace GeoJSONPlugin
 
 		public void Export(ApplicationDataModel dataModel, string exportPath, Properties properties = null)
 		{
+			ColumnInfo.Initialize();
 			ParseExportProperties(properties);
 
 			if (!Directory.Exists(exportPath))
