@@ -335,16 +335,70 @@ namespace GeoJSONPlugin
 
 					// starting from workRecords --> Not doing this as some loggedData may have not been referenced in a workrecord; we want to catch all logged data in the adm
 					// starting from LoggedData
+					var extraProperties = new Dictionary<string, object>();
 					foreach (var loggedData in dataModel.Documents.LoggedData)
 					{
+						extraProperties.Clear();
+						var fieldDescription = dataModel.Catalog.Fields.FirstOrDefault(field => field.Id.ReferenceId == loggedData.FieldId)?.Description;
+						if (fieldDescription != null)
+                        {
+							extraProperties.Add("Field", fieldDescription);
+                        }
 						foreach (OperationData operation in loggedData.OperationData)
 						{
 							Console.WriteLine("OperationTimelog - operationData: " + operation.Id.ReferenceId + " " + operation.OperationType + " maxDepth " + operation.MaxDepth);
 
+							var products = dataModel.Catalog.Products.Where(product => operation.ProductIds.Contains(product.Id.ReferenceId))?.Select(product => product.Description);
+							if (products != null)
+							{
+								if (extraProperties.ContainsKey("Product"))
+                                {
+									extraProperties["Product"] = products;
+								}
+								else
+                                {
+									extraProperties.Add("Product", products);
+                                }
+							}
+
+							var equipmentConfigurations = dataModel.Catalog.EquipmentConfigurations.Where(ec => operation.EquipmentConfigurationIds.Contains(ec.Id.ReferenceId));
+							var connectorIds = equipmentConfigurations?.Select(equipmentConfiguration => equipmentConfiguration.Connector1Id);
+							if (connectorIds != null)
+                            {
+								var connectors = dataModel.Catalog.Connectors.Where(connector => connectorIds.Contains(connector.Id.ReferenceId));
+								var deviceElementConfigurationIds = connectors?.Select(connector => connector.DeviceElementConfigurationId);
+								if (deviceElementConfigurationIds != null)
+                                {
+									var deviceElementConfigurations = dataModel.Catalog.DeviceElementConfigurations.Where(dec => deviceElementConfigurationIds.Contains(dec.Id.ReferenceId));
+									var implementConfiguration = deviceElementConfigurations.Select(dec => dec as AgGateway.ADAPT.ApplicationDataModel.Equipment.ImplementConfiguration).Where(dec => dec != null).FirstOrDefault();
+									if (implementConfiguration != null)
+                                    {
+										var physicalWidthMM = implementConfiguration.PhysicalWidth.Value.Value;
+										if (extraProperties.ContainsKey("Swth_Wdth_ft"))
+										{
+											extraProperties["Swth_Wdth_ft"] = physicalWidthMM / 304.8;
+										}
+										else
+										{
+											extraProperties.Add("Swth_Wdth_ft", physicalWidthMM / 304.8);
+										}
+
+										if (extraProperties.ContainsKey("Swth_Wdth_mm"))
+										{
+											extraProperties["Swth_Wdth_mm"] = physicalWidthMM;
+										}
+										else
+										{
+											extraProperties.Add("Swth_Wdth_mm", physicalWidthMM);
+										}
+									}
+								}
+                            }
+
 							IEnumerable<SpatialRecord> spatialRecords = operation.GetSpatialRecords != null ? operation.GetSpatialRecords() : null;
 							if (spatialRecords != null && spatialRecords.Any()) //No need to export a timelog if no data
 							{
-								var operationTimelogFeatures = operationTimelogMapper.MapMultiple(operation, spatialRecords);
+								var operationTimelogFeatures = operationTimelogMapper.MapMultiple(operation, spatialRecords, extraProperties);
 
 
 

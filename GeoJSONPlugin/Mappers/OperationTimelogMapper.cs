@@ -55,7 +55,7 @@ namespace GeoJSONPlugin.Mappers
             return deviceElementUses;
         }
 
-        public List<Feature> MapMultiple(OperationData operation, IEnumerable<SpatialRecord> spatialRecords)
+        public List<Feature> MapMultiple(OperationData operation, IEnumerable<SpatialRecord> spatialRecords, Dictionary<string, object> extraProperties = null)
         {
             List<DeviceElementUse> deviceElementUses = GetAllSections(operation);
             List<WorkingData> workingDatas = deviceElementUses.SelectMany(x => x.GetWorkingDatas()).ToList();   // meters
@@ -191,6 +191,18 @@ namespace GeoJSONPlugin.Mappers
                                 }
                                 properties.Add(newKey, value);
                             }
+                        }
+                    }
+
+                    if (extraProperties != null)
+                    {
+                        foreach (var property in extraProperties)
+                        {
+                            if (properties.ContainsKey(property.Key))
+                            {
+                                continue;
+                            }
+                            properties.Add(property.Key, property.Value);
                         }
                     }
                     // add to FC
